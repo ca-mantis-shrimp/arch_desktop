@@ -12,102 +12,140 @@
 - Build artifacts organized in build/ directory
 - Image builds successfully (1.6GB compressed, 18GB raw)
 
-## Critical Issues
+## Critical Issues - RESOLVED AND IDENTIFIED
 
-### 🔴 Boot Loop in VM
+### ✅ **FIXED: Missing Kernel Command Line**
 
-**Symptom**: System boots into initrd, starts systemd services, but gets stuck in a loop repeatedly switching between initrd stages without completing boot to the real root filesystem.
+**Problem**: Boot entry had completely empty kernel command line parameters (`options` field was blank).
 
-**Observed behavior**:
-- ✅ Kernel loads successfully
-- ✅ Initrd unpacks and runs
-- ✅ systemd services start (networkd, resolved, udev, etc.)
-- ✅ Root partition (LABEL=root-a) is found and mounted to /sysroot
-- ✅ Switch root process initiates
-- ❌ System loops back to initrd instead of booting into real root
+**Solution**: Added `KernelCommandLine=root=LABEL=root-a rw console=ttyS0` to mkosi.conf
 
-**Potential causes**:
-1. **Missing init in root filesystem**
-   - The root filesystem may not have /sbin/init or /usr/lib/systemd/systemd
-   - Check: Mount the image and verify init exists
+**Verification**:
+- Boot entry now correctly shows: `options root=LABEL=root-a rw console=ttyS0`
+- Kernel successfully passes parameters to initrd
+- Root partition (LABEL=root-a) is found and mounted to /sysroot
 
-2. **Incorrect kernel command line**
-   - Current: `root=LABEL=root-a rw console=ttyS0`
-   - May need: `init=/usr/lib/systemd/systemd` explicitly
-   - May need: `systemd.unit=multi-user.target`
+**File changed**: mkosi.conf:25
 
-3. **Initrd not properly handing off to root**
-   - The switch-root process may be failing
-   - Missing files in /sysroot needed for switch-root
-   - Check systemd-repart partition population
+### ✅ **VERIFIED: Root Filesystem Population**
 
-4. **Root filesystem not properly populated**
-   - mkosi.repart/10-root-a.conf has `CopyFiles=/`
-   - This may not be working correctly
-   - Verify root partition actually has system files
+**Investigation results**:
+- Root filesystem (`/dev/loop0p2`, LABEL=root-a) is properly populated
+- `/init` symlink exists → `/usr/lib/systemd/systemd`
+- `/usr/lib/systemd/systemd` binary present (137KB, executable)
+- All system directories present: /etc, /var, /usr, /bin, /sbin, etc.
+- All systemd components installed correctly
+
+**Conclusion**: Root filesystem is NOT the issue.
+
+### 🔴 **CURRENT ISSUE: Switch-Root Loop**
+
+**Symptom**: After fixing kernel command line, system still loops infinitely during switch-root:
+
+```
+[ OK ] Reached target Switch Root.
+      Starting Switch Root...
+[systemd restarts and loops back to initrd]
+```
+
+**Root Cause Analysis**:
+
+The current A/B partition configuration conflicts with modern systemd/mkosi architecture:
+
+**Current (problematic) approach**:
+- ESP: `CopyFiles=/boot:/` and `CopyFiles=/efi:/`
+- root-a: `CopyFiles=/` (copies entire system to root partition)
+- root-b: empty (for future A/B updates)
+- Uses traditional monolithic root partition model
+
+**Recommended systemd approach** (per https://systemd.io/BUILDING_IMAGES/):
+- Ship immutable `/usr/` partition (A and B versions)
+- Small writable root filesystem created at runtime by systemd-repart
+- `/etc`, `/var`, `/home` separate from `/usr`
+- A/B updates happen at `/usr` level, not full root
+- Use systemd-sysext for additional software layers
 
 ## Next Steps (Priority Order)
 
-### High Priority
+### Path A: Fix Current Monolithic Root Setup (Quick, Non-Standard)
 
-1. **Debug the root filesystem contents**
+If you want to get something booting ASAP with the current architecture:
+
+1. **Remove custom mkosi.repart/ entirely**
+   - Let mkosi use default single-root partition layout
+   - Sacrifice A/B partitions temporarily to verify boot works
+   - Test: `mv mkosi.repart mkosi.repart.disabled && mkosi build`
+
+2. **Debug switch-root failure with systemd debug logging**
    ```bash
-   # Mount the image and inspect
-   sudo losetup -fP build/immutable-arch_0.1.0.raw
-   sudo mount /dev/loop0p2 /mnt  # Assuming root-a is partition 2
-   ls -la /mnt
-   ls -la /mnt/usr/lib/systemd/
-   # Check for init/systemd binary
-   sudo umount /mnt
-   sudo losetup -d /dev/loop0
+   # Add to mkosi.conf KernelCommandLine:
+   KernelCommandLine=root=LABEL=root-a rw console=ttyS0 systemd.log_level=debug systemd.log_target=console
    ```
 
-2. **Fix kernel command line**
-   - Try adding explicit init parameter
-   - Test: `root=LABEL=root-a rw init=/usr/lib/systemd/systemd console=ttyS0`
+3. **Try Unified Kernel Image (UKI)**
+   - May have better initrd/root integration
+   - Add to mkosi.conf: `UnifiedKernelImages=yes`
+   - UKI bundles kernel + initrd + cmdline into single .efi file
 
-3. **Review mkosi.repart configuration**
-   - The `CopyFiles=/` directive may need adjustment
-   - Consider using mkosi's default partition handling
-   - May need to remove custom repart config and let mkosi handle it
+### Path B: Adopt Modern systemd Architecture (Recommended, Standard)
 
-4. **Check mkosi build logs for partition population**
-   ```bash
-   grep -i "copying files" build/build.log
-   grep -i "partition" build/build.log
-   grep -i "sysroot" build/build.log
+Redesign to match systemd best practices for immutable systems:
+
+1. **Study reference implementations**
+   - https://0pointer.net/blog/fitting-everything-together.html
+   - https://systemd.io/BUILDING_IMAGES/
+   - Look for mkosi examples using `/usr` partitions
+
+2. **Redesign partition layout**
+   ```
+   # New structure:
+   - ESP (EFI System Partition)
+   - usr-a (immutable, verity-protected /usr partition A)
+   - usr-b (immutable, verity-protected /usr partition B)
+   - root (writable, created at runtime by systemd-repart)
+   - home (optional, created at runtime)
+   - var (optional, created at runtime)
    ```
 
-### Medium Priority
+3. **Configure mkosi for /usr-only images**
+   - Research mkosi options for building `/usr` trees
+   - Set up systemd-repart definitions for runtime partition creation
+   - Ship repart definitions IN the image at `/usr/lib/repart.d/`
 
-5. **Test with simplified configuration**
-   - Remove custom mkosi.repart/ temporarily
-   - Let mkosi create default partition layout
-   - See if that boots successfully
+4. **Implement A/B updates properly**
+   - Use GPT partition attributes to mark active/inactive `/usr` partitions
+   - systemd automatically boots from partition without GUID:63 attribute
+   - Updates write to inactive partition, flip attribute, reboot
 
-6. **Add debug kernel parameters**
-   ```bash
-   systemd.log_level=debug systemd.log_target=console
-   ```
+5. **Add dm-verity protection**
+   - Cryptographically verify `/usr` partition integrity
+   - Embed root hash in kernel command line
+   - Prevents tampering with system files
 
-7. **Consider UKI (Unified Kernel Image)**
-   - Current config uses separate kernel/initrd
-   - UKI might have better integration
-   - Set `UnifiedKernelImages=yes` in mkosi.conf
+### Path C: Hybrid Approach (Pragmatic)
 
-### Low Priority
+Start simple, migrate to proper architecture later:
 
-8. **Add systemd-homed support**
-   - Configure separate home partition
-   - Integrate with existing NVME home drive
+1. **Get basic single-root booting first** (Path A, step 1)
+2. **Once booting, add second root partition manually**
+3. **Implement basic A/B switching with scripts**
+4. **Later migrate to `/usr`-based architecture** (Path B)
 
-9. **Set up systemd-sysext layers**
-   - Create extension images for additional software
-   - Test overlay functionality
+### Immediate Action Items
 
-10. **Configure NVIDIA drivers**
-    - Add to package list
-    - Configure kernel modules
+**Choose a path** based on your goals:
+- **Quick prototype**: Path A or C
+- **Production-ready immutable OS**: Path B
+- **Learning systemd properly**: Path B
+
+**Current blockers to resolve**:
+- ❌ Switch-root infinite loop
+- ❓ Unknown: Why switch-root fails with populated root filesystem
+
+**Required investigation**:
+- Mount root-a and check `/etc/fstab` (should be empty/absent)
+- Verify no conflicting init systems
+- Check for /sysroot mount issues in initrd logs
 
 ## Investigation Commands
 
@@ -135,10 +173,24 @@ mkosi --help | grep -i partition
 
 ## Resources
 
-- [mkosi documentation](https://github.com/systemd/mkosi)
-- [systemd-repart](https://www.freedesktop.org/software/systemd/man/latest/systemd-repart.html)
-- [Arch Installation Guide](https://wiki.archlinux.org/title/Installation_guide)
-- [systemd-boot](https://www.freedesktop.org/software/systemd/man/latest/systemd-boot.html)
+### Essential Documentation
+- [systemd: Building Images](https://systemd.io/BUILDING_IMAGES/) - Official guide for OS image creation
+- [Fitting Everything Together](https://0pointer.net/blog/fitting-everything-together.html) - Lennart's comprehensive architecture overview
+- [mkosi Re-introduction](https://0pointer.net/blog/a-re-introduction-to-mkosi-a-tool-for-generating-os-images.html) - Modern mkosi usage guide
+- [Arch Linux Rescue Image with mkosi](https://swsnr.de/archlinux-rescue-image-with-mkosi/) - Arch-specific mkosi example
+
+### Reference Documentation
+- [mkosi GitHub](https://github.com/systemd/mkosi) - Main repository and docs
+- [systemd-repart](https://www.freedesktop.org/software/systemd/man/latest/systemd-repart.html) - Partition management
+- [systemd-boot](https://www.freedesktop.org/software/systemd/man/latest/systemd-boot.html) - Boot loader
+- [Discoverable Partitions Spec](https://systemd.io/DISCOVERABLE_PARTITIONS/) - GPT partition type UUIDs
+- [Arch Installation Guide](https://wiki.archlinux.org/title/Installation_guide) - Base Arch reference
+
+### Key Findings from Investigation
+- **A/B updates in systemd**: Use GPT partition attributes, not manual partition management
+- **mkosi + A/B**: Issue #379 on GitHub - mkosi delegates A/B to systemd-repart, not build-time config
+- **/usr vs root**: Modern immutable systems ship `/usr` partitions, not full root
+- **CopyFiles=/**: Copies files at build time; conflicts when both ESP and root try to copy `/boot`
 
 ## Notes
 
