@@ -1,9 +1,7 @@
 # Build artifacts
 build/
-*.raw
-*.raw.zst
-*.img
-*.iso
+
+mkosi.rootpw
 
 # mkosi cache and workspace
 mkosi.cache/
