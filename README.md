@@ -1,3 +1,39 @@
+# The Immutable Arch Distribution
+
+An experimental immutable Arch Linux distribution using systemd technologies for A/B updates and atomic rollbacks.
+
+## Quick Start
+
+```bash
+# Build the image
+mkosi build
+
+# Test in VM (SAFE - does not touch your disk!)
+mkosi qemu
+```
+
+Login credentials: `root` / `root`
+
+## Documentation
+
+- [Build Guide](docs/BUILD.md) - How to build and test the image
+- [Deployment Guide](docs/DEPLOY.md) - Installing to new hardware
+- [Quick Reference](docs/QUICKSTART.md) - Common commands and workflows
+
+## Project Structure
+
+```
+.
+├── mkosi.conf              # Main build configuration
+├── mkosi.repart/          # Partition definitions (A/B setup)
+├── mkosi.extra/           # Custom files to include
+├── mkosi.postinst         # Post-installation script
+├── docs/                  # Documentation
+└── build/                 # Build artifacts (gitignored)
+```
+
+---
+
 # The Immutable Arch Distribution Configuration
 This is the site of an experiment, what i want is to go through the process of BUILDING an arch-based format that is going to be able to incrementally update by using systemd-repart to manage partitions and we can then load new versions onto the off-partition and boot into it using systemd-boot with the ability to roll back whenever
 

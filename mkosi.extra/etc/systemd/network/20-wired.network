@@ -1,0 +1,14 @@
+# Basic wired network configuration using systemd-networkd
+# This will enable DHCP on all wired ethernet interfaces
+
+[Match]
+Name=en*
+Type=ether
+
+[Network]
+DHCP=yes
+IPv6PrivacyExtensions=yes
+
+[DHCPv4]
+UseDNS=yes
+UseRoutes=yes

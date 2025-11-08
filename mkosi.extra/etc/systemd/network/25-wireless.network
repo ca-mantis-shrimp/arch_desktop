@@ -1,0 +1,14 @@
+# Basic wireless network configuration using systemd-networkd
+# This will enable DHCP on all wireless interfaces
+
+[Match]
+Name=wl*
+Type=wlan
+
+[Network]
+DHCP=yes
+IPv6PrivacyExtensions=yes
+
+[DHCPv4]
+UseDNS=yes
+UseRoutes=yes

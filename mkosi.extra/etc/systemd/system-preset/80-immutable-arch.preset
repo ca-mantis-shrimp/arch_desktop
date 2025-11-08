@@ -1,0 +1,16 @@
+# Immutable Arch Distribution System Presets
+# These services will be enabled by default
+
+# Network management with systemd-networkd and systemd-resolved
+enable systemd-networkd.service
+enable systemd-resolved.service
+enable systemd-networkd.socket
+
+# Wireless networking
+enable iwd.service
+
+# Time synchronization
+enable systemd-timesyncd.service
+
+# SSH for remote access
+enable sshd.service

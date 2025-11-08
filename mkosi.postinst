@@ -1,0 +1,16 @@
+#!/bin/bash
+# Post-installation script for immutable Arch distribution
+# This script runs in a chroot of the image being built
+# Simplified to only perform essential runtime tasks
+
+set -e
+
+echo "=== Generating locales ==="
+# Generate locales (locale.gen is already in place from mkosi.extra)
+locale-gen
+
+echo "=== Creating necessary directories ==="
+# Create directories for extensions and services
+mkdir -p /var/lib/extensions /var/lib/portables /home
+
+echo "=== Configuration complete ==="
