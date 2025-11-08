@@ -85,5 +85,5 @@ mkosi shell
 ```
 
 Login credentials: `root` / `root`
-## Current State
-We have the `bootable` profile working and can even run it in QEMU with our layout, but im not able to do `boot` which is troubling or `shell` so definately not perfect im not quite sure what is wrong yet but there has been definite progress
+
+

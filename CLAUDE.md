@@ -1,6 +1,7 @@
 # Overview
 Be sure to read the documentation before you do anything:
 - [README](./README.md)
+- [docs](./docs/) are also a good place to look for detailed information and leave information of your own, we want to be considerate here
 ## Tooling
 - Leverage `mkosi` wherever you can
 - `man` is your friend, do your research
