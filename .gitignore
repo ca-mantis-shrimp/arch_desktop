@@ -4,9 +4,9 @@ build/
 mkosi.rootpw
 
 # mkosi cache and workspace
-mkosi.cache/
-mkosi.builddir/
-mkosi.output/
+mkosi.cache/*
+mkosi.builddir/*
+mkosi.output/*
 .mkosi-*
 
 # Logs
