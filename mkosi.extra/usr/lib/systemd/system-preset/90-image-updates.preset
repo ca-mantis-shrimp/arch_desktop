@@ -1,0 +1,2 @@
+# Enable systemd-repart to manage A/B partition creation and updates
+enable systemd-repart.service
